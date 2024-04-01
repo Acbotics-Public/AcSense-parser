@@ -32,7 +32,7 @@ def read_timestamp64(f):
 
 # Load and process all sens and acoustic files:
 def load_process_all_files(
-    indir, outdir, hydrophone_ADC="EXT", plotting=False, export=True
+    indir, outdir, hydrophone_ADC="EXT", plotting=False, export=True, audiofile=True
 ):
     # indir: input directory (search for SENS*.dat here)
     # outdir: output directory (where to put plots and csvs)
@@ -62,14 +62,15 @@ def load_process_all_files(
         )
 
     # export audio files:
-    for filen in AUDIO_filelist:
-        print("Working on file " + filen)
-        export_csv_audio(
-            audio_filename=filen,
-            outdir=outdir,
-            plotting=plotting,
-            hydrophone_ADC=hydrophone_ADC,
-        )
+    if audiofile:
+        for filen in AUDIO_filelist:
+            print("Working on file " + filen)
+            export_csv_audio(
+                audio_filename=filen,
+                outdir=outdir,
+                plotting=plotting,
+                hydrophone_ADC=hydrophone_ADC,
+            )
 
 
 ###############################
@@ -80,32 +81,50 @@ def parse_record_audio(f, hydrophone_ADC="EXT"):
     res3 = {}
     if hydrophone_ADC == "INT":  # if internal adc
         res3["versionId"] = int.from_bytes(f.read(1), "little")
+
         res3["channels"] = int.from_bytes(f.read(1), "little")
         res3["bitsPerChannel"] = int.from_bytes(f.read(1), "little")
         res3["bytesPerChannel"] = int.from_bytes(f.read(1), "little")
         res3["unpackedShiftRight"] = int.from_bytes(f.read(1), "little")
         res3["overflowCount"] = int.from_bytes(f.read(1), "little")
         res3["dataRecordsPerBuffer"] = int.from_bytes(f.read(2), "little")
-        res3["sampleRate"] = int.from_bytes(f.read(8), "little")
+        res3["sampleRate"] = np.frombuffer(f.read(8), dtype=np.float64)[0]
         res3["sampleCount"] = int.from_bytes(f.read(4), "little")
 
         res3["timestamp"] = read_timestamp64(f)
-        print(res3["timestamp"])
-        res3["scale"] = int.from_bytes(f.read(8), "little")
-        res3["time_vector"] = []
+
+        res3["scale"] = np.frombuffer(f.read(8), dtype=np.float64)[0]
+        tt = []
+
         print(res3)
+        if res3["channels"] == 255:
+            raise Exception("Something is wrong!")
         if res3["channels"] > 1:
-            data = [[] for i in range(res3["channels"])]
+            data1 = [[] for i in range(res3["channels"])]
         else:
-            data = []
-        for i in range(240):
-            res3["time_vector"].append(res3["timestamp"] + i * 1 / (FS_AUDIO * TICK))
+            data1 = []
+
+        # print(str(len(tt)) + " " + str(len(data1)))
+        # print(res3["channels"])
+        # blarg
+        for i in range(res3["dataRecordsPerBuffer"]):
+
+            tt.append(res3["timestamp"] + i * 1 / (FS_AUDIO * TICK))
+
             if res3["channels"] > 1:
                 for ch in range(res3["channels"]):
-                    data[ch].append(int.from_bytes(f.read(2), "little", signed=True))
+                    d = int.from_bytes(f.read(2), "little", signed=True)
+                    data1[ch].append(d)
             else:
-                data.append(int.from_bytes(f.read(2), "little", signed=True))
-        res3["data"] = data
+                d = int.from_bytes(f.read(2), "little", signed=True)
+                # print(d)
+                data1.append(d)
+            # print(res3["channels"])
+        print(str(len(tt)) + " " + str(len(data1)))
+        # blarg
+        res3["data"] = data1
+        res3["time_vector"] = tt
+
     elif hydrophone_ADC == "EXT":
         res3["timestamp"] = read_timestamp64(f)
         res3["dataRecordsPerBuffer"] = int.from_bytes(f.read(2), "little")
@@ -114,13 +133,13 @@ def parse_record_audio(f, hydrophone_ADC="EXT"):
         res3["overFlowCount"] = int.from_bytes(f.read(2), "little")
         res3["firstOverFlowRecord"] = int.from_bytes(f.read(2), "little")
         res3["time_vector"] = []
-        data = [[] for i in range(res3["channels"])]
+        data1 = [[] for i in range(res3["channels"])]
         for i in range(255):
             res3["time_vector"].append(res3["timestamp"] + i * 1 / (FS_AUDIO * TICK))
 
             for ch in range(res3["channels"]):
-                data[ch].append(int.from_bytes(f.read(2), "little", signed=True))
-        res3["data"] = data
+                data1[ch].append(int.from_bytes(f.read(2), "little", signed=True))
+        res3["data"] = data1
     return res3
 
 
@@ -132,7 +151,7 @@ def load_raw_audio_data(filename, hydrophone_ADC="EXT"):
     f.seek(0x00)
     if hydrophone_ADC == "INT":
         raw_data = []
-        seek_offset = 524
+        seek_offset = 506  # 524
     elif hydrophone_ADC == "EXT":
         raw_data = [[] for i in range(8)]
         seek_offset = 0x1000
@@ -159,17 +178,18 @@ def export_csv_audio(audio_filename, outdir, plotting=False, hydrophone_ADC="EXT
     [timestamps, raw_data, nch] = load_raw_audio_data(audio_filename, hydrophone_ADC)
     fileroot = (os.path.split(audio_filename))[-1].split(".")[0]
     # print(fileroot)
-
+    print(raw_data.shape)
+    print(timestamps.shape)
     outroot = os.path.join(outdir, fileroot)
     plt.close("all")
     plt.subplot(211)
-    plt.plot(timestamps, raw_data)
+    plt.plot(timestamps, raw_data[0 : len(timestamps)])
     plt.subplot(212)
     plt.specgram(raw_data + 1, Fs=52000, NFFT=2000)
     plt.savefig(outroot + ".png")
 
     # from sens dict, export csvs for each:
-
+    # plt.show()
     df_Audio = pd.DataFrame(
         data=np.transpose(raw_data), columns=list(range(0, nch)), index=timestamps
     )
@@ -268,6 +288,9 @@ def read_imu_data(f):
     # read imu data, get metrics
     res = {}
     res["timestamp"] = read_timestamp64(f)
+    res["ID1"] = int.from_bytes(f.read(1), "little", signed=False)
+    res["ID2"] = int.from_bytes(f.read(1), "little", signed=False)
+    res["numbytes"] = int.from_bytes(f.read(2), "little", signed=False)
     res["PitchNed_DegreesX100"] = int.from_bytes(f.read(4), "little", signed=True)
     res["RollNed_DegreesX100"] = int.from_bytes(f.read(4), "little", signed=True)
     res["Accel_X"] = int.from_bytes(f.read(2), "little", signed=True)
@@ -712,6 +735,9 @@ def plot_sens_data(data, outdir, fileroot, hydrophone_ADC):
             plot_adc_mini(
                 get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[1, 1]
             )
+            plot_specadc_mini(
+                get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[2, 1]
+            )
         else:
             plot_geophone(
                 get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[1, 1]
@@ -755,6 +781,7 @@ def plot_sens_data(data, outdir, fileroot, hydrophone_ADC):
         )
     elif "Int_ADC" in data.keys():
         plot_adc_mini(get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[1])
+
     if "IMU_data" in data.keys():
         plot_IMU(get_xaxis(data["IMU_data"], timescale), data["IMU_data"], ax[2])
     plt.savefig(os.path.join(outdir, fileroot + "_specgram.png"))
