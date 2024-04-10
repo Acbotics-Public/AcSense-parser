@@ -158,7 +158,10 @@ def load_raw_audio_data(filename, hydrophone_ADC="EXT"):
     time_stamps = []
     while True:
         block_start = f.tell()
-        data = parse_record_audio(f, hydrophone_ADC)
+        try:
+            data = parse_record_audio(f, hydrophone_ADC)
+        except:
+            return [None, None, None]
         time_stamps.extend(data["time_vector"])
         if hydrophone_ADC == "EXT":
             for i in range(data["channels"]):
@@ -176,6 +179,8 @@ def export_csv_audio(audio_filename, outdir, plotting=False, hydrophone_ADC="EXT
     #    sens_filename: filename of sens file parsed
     #    outdir (optional): where to put .csv files from the parse
     [timestamps, raw_data, nch] = load_raw_audio_data(audio_filename, hydrophone_ADC)
+    if timestamps is None:
+        return
     fileroot = (os.path.split(audio_filename))[-1].split(".")[0]
     # print(fileroot)
     print(raw_data.shape)
@@ -713,14 +718,27 @@ def read_block(hydrophone_ADC, f, sens_dict, timeonly=False):
 #################################
 def plot_sens_data(data, outdir, fileroot, hydrophone_ADC):
     # plot the data!
-    fig, ax = plt.subplots(3, 2, figsize=(20, 10))
-
+    plt_len = 0
+    data_keys_plot = [
+        "GPS_data",
+        "RTC_data",
+        "Int_ADC",
+        "IMU_data",
+        "ExtPTS_data",
+        "IntPTS_data",
+    ]
+    for key in data_keys_plot:
+        if key in data.keys():
+            plt_len = plt_len + 1
+    fig, ax = plt.subplots(plt_len, 1, figsize=[20, 10])
+    curidx = 0
     # first: plot IMU:
     if "GPS_data" in data.keys():
         gps_RTC = data[
             "GPS_data"
         ]  # [[x['EpochTime'] for x in data['GPS_data']],'Time UTC']
-        plot_lat_lon(data["GPS_data"], ax[0, 1])
+        plot_lat_lon(data["GPS_data"], ax[curidx])
+        curidx = curidx + 1
         timescale = gps_RTC
     else:
         gps_RTC = None
@@ -733,17 +751,16 @@ def plot_sens_data(data, outdir, fileroot, hydrophone_ADC):
     if "Int_ADC" in data.keys():
         if hydrophone_ADC == "INT":
             plot_adc_mini(
-                get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[1, 1]
-            )
-            plot_specadc_mini(
-                get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[2, 1]
+                get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[curidx]
             )
         else:
             plot_geophone(
-                get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[1, 1]
+                get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[curidx]
             )
+        curidx = curidx + 1
     if "IMU_data" in data.keys():
-        plot_IMU(get_xaxis(data["IMU_data"], timescale), data["IMU_data"], ax[0, 0])
+        plot_IMU(get_xaxis(data["IMU_data"], timescale), data["IMU_data"], ax[curidx])
+        curidx = curidx + 1
 
     # plot_ping(get_xaxis(data['PING_data'],gps_RTC),data['PING_data'],ax[0,1])
     if "ExtPTS_data" in data.keys():
@@ -751,43 +768,22 @@ def plot_sens_data(data, outdir, fileroot, hydrophone_ADC):
             get_xaxis(data["ExtPTS_data"], timescale),
             data["ExtPTS_data"],
             "ext",
-            ax[1, 0],
+            ax[curidx],
         )
+        curidx = curidx + 1
     if "IntPTS_data" in data.keys():
         plot_PTS(
             get_xaxis(data["IntPTS_data"], timescale),
             data["IntPTS_data"],
             "int",
-            ax[2, 0],
+            ax[curidx],
         )
-    if "IMU_data" in data.keys() & "Int_ADC" in data.keys():
-        plot_specadc_mini(
-            get_xaxis(data["IMU_data"], timescale), data["Int_ADC"], ax[2, 1]
-        )
+        curidx = curidx + 1
 
     plt.tight_layout()
     #    plt.show()
     plt.savefig(os.path.join(outdir, fileroot + "_sens.png"))
     # plt.show()
-    plt.close("all")
-
-    # plt.show()
-    fig, ax = plt.subplots(3, 1, figsize=(20, 10))
-    if "Int_ADC" in data.keys():
-        plot_specadc_mini(get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[0])
-    if "ExtPTS_data" in data.keys():
-        plot_PTS(
-            get_xaxis(data["ExtPTS_data"], timescale), data["ExtPTS_data"], "ext", ax[1]
-        )
-    elif "Int_ADC" in data.keys():
-        plot_adc_mini(get_xaxis(data["Int_ADC"], timescale), data["Int_ADC"], ax[1])
-
-    if "IMU_data" in data.keys():
-        plot_IMU(get_xaxis(data["IMU_data"], timescale), data["IMU_data"], ax[2])
-    plt.savefig(os.path.join(outdir, fileroot + "_specgram.png"))
-    # plt.show()
-
-    plt.close()
     plt.close("all")
 
 

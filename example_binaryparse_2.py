@@ -13,8 +13,8 @@ import AcSense_parser_utils
 # Model options:
 # 0: AcSense-PLUS
 # 1: AcSense-8CH or AcSense-16CH
-# 2: AcSense-Mini
-# 3: AcSense-Mini-48hr
+# 2: AcSense-Mini (old software)
+# 3: AcSense-Mini-48hr and AcSense-Mini-Soundscape (new software build)
 
 
 def run_parse_AcSense(indir, unit_model=0, outdir=None, plotting=False, export=True):
@@ -30,5 +30,5 @@ def run_parse_AcSense(indir, unit_model=0, outdir=None, plotting=False, export=T
         )
 
 
-mypath = "/home/efischell/Desktop/SDcard/D7/"
+mypath = "/home/efischell/Desktop/SDcard/D1/"
 run_parse_AcSense(mypath, unit_model=3, plotting=True)
